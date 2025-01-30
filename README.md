@@ -1,3 +1,5 @@
 # prometheus-remote-write
 
-## will do later, being lazy rn 
+## This is a WIP, not for use yet
+
+### TODO: finish readme
