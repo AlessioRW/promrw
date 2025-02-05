@@ -46,6 +46,7 @@ func NewClient(remoteWriteURL string, userAgent string, labels []Label) (*Remote
 }
 
 // Create a new metric to be pushed to Prometheus.
+// name Parameter is the value of the "__name__" label of the metric
 func NewMetric(name string, labels []Label) *Metric {
 	pLabels := []prompb.Label{}
 	for _, label := range labels {
