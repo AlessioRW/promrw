@@ -13,4 +13,4 @@
 ## Installation
 To install `promrw`, use:
 ```sh
-go get github.com/yourusername/promrw
+go get github.com/AlessioRW/promrw
