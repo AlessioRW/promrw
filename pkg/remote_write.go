@@ -6,19 +6,23 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/robfig/cron"
 )
 
 type RemoteWriteClient struct {
 	userAgent     string
 	prometheusURL string
-	metrics       []prompb.TimeSeries
-	cron          *cron.Cron
+	metrics       []*prompb.TimeSeries
+	labels        []Label
+	httpClient    *http.Client
+}
+
+type Metric struct {
+	Labels  []prompb.Label
+	Samples []prompb.Sample
 }
 
 type Label struct {
@@ -27,68 +31,43 @@ type Label struct {
 }
 
 // Create a new Remote Write Client.
-// Write frequency is a Cron Schedule (see https://pkg.go.dev/github.com/robfig/cron?utm_source=godoc for help.
-func NewClient(remoteWriteURL string, userAgent string, writeFrequency string) (RemoteWriteClient, error) {
+// Labels passed into this function will be applied to every metric pushed via this client
+func NewClient(remoteWriteURL string, userAgent string, labels []Label) (*RemoteWriteClient, error) {
 
 	client := RemoteWriteClient{
 		prometheusURL: remoteWriteURL,
 		userAgent:     userAgent,
-		metrics:       []prompb.TimeSeries{},
+		metrics:       []*prompb.TimeSeries{},
+		labels:        labels,
+		httpClient:    &http.Client{Timeout: 10 * time.Second},
 	}
 
-	client.cron = cron.New()
-	err := client.cron.AddFunc(writeFrequency, func() {
-		client.pushMetrics()
-	})
-	if err != nil {
-		slog.Error("error scheduling cron job", slog.Any("error", err))
-		return RemoteWriteClient{}, err
-	}
-	client.cron.Start()
-
-	return client, nil
+	return &client, nil
 }
 
-// Add a Metric to be pushed to Prometheus.
-func (client *RemoteWriteClient) AddMetric(name string, labels []Label) {
+// Create a new metric to be pushed to Prometheus.
+func NewMetric(name string, labels []Label) *Metric {
 	pLabels := []prompb.Label{}
 	for _, label := range labels {
 		pLabels = append(pLabels, prompb.Label{Name: label.Name, Value: label.Value})
 	}
 
-	metric := prompb.TimeSeries{
+	metric := Metric{
 		Labels:  append(pLabels, prompb.Label{Name: "__name__", Value: name}),
 		Samples: []prompb.Sample{},
 	}
 
-	client.metrics = append(client.metrics, metric)
+	return &metric
+
 }
 
-func (client *RemoteWriteClient) getMetric(metricName string) (prompb.TimeSeries, error) {
-	for _, metric := range client.metrics {
-		for _, label := range metric.Labels {
-			if label.Name == "__name__" {
-				if label.Value == metricName {
-					return metric, nil
-				}
-			}
-		}
-	}
-	return prompb.TimeSeries{}, fmt.Errorf("could not find metric with name \"%v\". add one using the AddMetric method", metricName)
-}
-
-// Add a Timeseries point to a Metric, these will be cleared every run of the Cron passed when initalising the client.
+// Add a Timeseries point to a Metric, these will be cleared every run of PushMetric.
 // Timestamp is a Millisecond value from the Unix Epoch.
-func (client *RemoteWriteClient) AddMetricPoint(metricName string, value float64, timestamp int64) error {
+func (metric *Metric) AddSample(value float64, timestamp int64) error {
 
 	newSample := prompb.Sample{
 		Value:     value,
 		Timestamp: timestamp,
-	}
-
-	metric, err := client.getMetric(metricName)
-	if err != nil {
-		return err
 	}
 
 	metric.Samples = append(metric.Samples, newSample)
@@ -96,55 +75,72 @@ func (client *RemoteWriteClient) AddMetricPoint(metricName string, value float64
 	return nil
 }
 
-func (client *RemoteWriteClient) pushMetrics() {
+func (client *RemoteWriteClient) PushMetric(metric *Metric) error {
+
+	allLabels := []prompb.Label{}
+	// add client specific labels
+	for _, label := range client.labels {
+		allLabels = append(allLabels, prompb.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+
+	// add metric labels
+	allLabels = append(allLabels, metric.Labels...)
+
+	prompbMetric := prompb.TimeSeries{
+		Labels:  allLabels,
+		Samples: metric.Samples,
+	}
 
 	writeReq := prompb.WriteRequest{
-		Timeseries: client.metrics,
+		Timeseries: []prompb.TimeSeries{prompbMetric},
 	}
 
 	data, err := writeReq.Marshal()
 	if err != nil {
-		fmt.Println("error marshalling timeseries data, error: %v,", err)
-		return
+		return fmt.Errorf("error marshalling timeseries data, error: %v,", err)
 	}
 
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
 	_, err = gzipWriter.Write(data)
 	if err != nil {
-		fmt.Println("error creating http request, error: %v,", err)
+		return fmt.Errorf("error creating http request, error: %v,", err)
 	}
 	gzipWriter.Close()
-
 	req, err := http.NewRequestWithContext(context.Background(), "POST", client.prometheusURL, &buffer)
 	if err != nil {
-		fmt.Println("error creating http request, error: %v,", err)
-		return
+		return fmt.Errorf("error creating http request, error: %v,", err)
+
 	}
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("User-Agent", client.userAgent)
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	res, err := httpClient.Do(req)
+	res, err := client.httpClient.Do(req)
+	if err != nil {
+		fmt.Printf("error sending http request to prometheus endpoint, error: %v", err)
+	}
 	defer res.Body.Close()
 
 	if res.StatusCode/100 != 2 || err != nil {
 		stringErr, convErr := io.ReadAll(res.Body)
 		if convErr != nil {
-			fmt.Println("remote write request failed with status code: %d, error: %v,", res.StatusCode, err)
+			return fmt.Errorf("remote write request failed with status code: %d, error: %v,", res.StatusCode, err)
 		}
-		fmt.Println("remote write request failed with status code: %d, error: %v, error returned from prometheus", res.StatusCode, err, string(stringErr))
-		return
+
+		return fmt.Errorf("remote write request failed with status code: %d, error: %v, error returned from prometheus: %v", res.StatusCode, err, string(stringErr))
 	}
 
-	client.clearMetricSamples()
+	clearMetricSamples(metric)
+
+	return nil
 }
 
 // clear samples so we don't send repeating data
-func (client *RemoteWriteClient) clearMetricSamples() {
-	for _, metric := range client.metrics {
-		metric.Samples = []prompb.Sample{}
-	}
+func clearMetricSamples(metric *Metric) {
+	metric.Samples = []prompb.Sample{}
 }
