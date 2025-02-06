@@ -8,12 +8,17 @@ import (
 )
 
 func main() {
+
+	prometheusUrl := ""
+	userAgent := ""
+	globalLabels := []promrw.Label{
+		{Name: "label", Value: "label_example_value"},
+	}
+
 	promClient, err := promrw.NewClient(
-		"remote_write_endpoint",
-		"promrw-example/1.0.0",
-		[]promrw.Label{
-			{Name: "label", Value: "label_example_value"},
-		},
+		prometheusUrl,
+		userAgent,
+		globalLabels,
 	)
 
 	if err != nil {
