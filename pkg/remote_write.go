@@ -36,8 +36,8 @@ type Label struct {
 }
 
 // Create a new Remote Write Client.
-// Labels passed into this function will be applied to every metric pushed via this client
-// Label names must match this pattern: ^[a-zA-Z_:][a-zA-Z0-9_:]*$
+// Labels passed into this function will be applied to every metric pushed via this client.
+// Label names must match this pattern: ^[a-zA-Z_:][a-zA-Z0-9_:]*$.
 func NewClient(remoteWriteURL string, userAgent string, labels []Label) (*RemoteWriteClient, error) {
 
 	pLabels := []prompb.Label{}
