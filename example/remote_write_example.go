@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	promrw "github.com/AlessioRW/promrw/pkg"
+	promrw "github.com/AlessioRW/promrw/promrw"
 )
 
 func promrwExample() {
