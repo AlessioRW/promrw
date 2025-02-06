@@ -7,16 +7,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/prometheus/prometheus/prompb"
+)
+
+var (
+	labelRegex = "^[a-zA-Z_:][a-zA-Z0-9_:]*$"
 )
 
 type RemoteWriteClient struct {
 	userAgent     string
 	prometheusURL string
 	metrics       []*prompb.TimeSeries
-	labels        []Label
+	labels        []prompb.Label
 	httpClient    *http.Client
 }
 
@@ -32,22 +37,60 @@ type Label struct {
 
 // Create a new Remote Write Client.
 // Labels passed into this function will be applied to every metric pushed via this client
+// Label names must match this pattern: ^[a-zA-Z_:][a-zA-Z0-9_:]*$
 func NewClient(remoteWriteURL string, userAgent string, labels []Label) (*RemoteWriteClient, error) {
+
+	pLabels := []prompb.Label{}
+	for _, label := range labels {
+		pLabels = append(pLabels, prompb.Label{Name: label.Name, Value: label.Value})
+	}
+
+	err := regexCheckLabels(pLabels)
+	if err != nil {
+		return nil, err
+	}
 
 	client := RemoteWriteClient{
 		prometheusURL: remoteWriteURL,
 		userAgent:     userAgent,
 		metrics:       []*prompb.TimeSeries{},
-		labels:        labels,
+		labels:        pLabels,
 		httpClient:    &http.Client{Timeout: 10 * time.Second},
 	}
 
 	return &client, nil
 }
 
+func regexCheckLabels(labels []prompb.Label) error {
+	for _, label := range labels {
+		match, err := regexp.MatchString(labelRegex, label.Name)
+		if err != nil {
+			return fmt.Errorf("error matching the regex for label, error: %v", err)
+		}
+		if !match {
+			return fmt.Errorf("label name \"%v\" does not match the required regex: %v", label.Name, labelRegex)
+		}
+
+		if label.Name == "__name__" {
+			match, err := regexp.MatchString(labelRegex, label.Value)
+			if err != nil {
+				return fmt.Errorf("error matching the regex for label value, error: %v", err)
+			}
+			if !match {
+				return fmt.Errorf("label value \"%v\" does not match the required regex: %v", label.Value, labelRegex)
+			}
+		}
+
+	}
+
+	return nil
+}
+
 // Create a new metric to be pushed to Prometheus.
-// name Parameter is the value of the "__name__" label of the metric
-func NewMetric(name string, labels []Label) *Metric {
+// name Parameter is the value of the "__name__" label of the metric.
+// Label names and "name" parameter, must match this pattern: ^[a-zA-Z_:][a-zA-Z0-9_:]*$.
+func NewMetric(name string, labels []Label) (*Metric, error) {
+
 	pLabels := []prompb.Label{}
 	for _, label := range labels {
 		pLabels = append(pLabels, prompb.Label{Name: label.Name, Value: label.Value})
@@ -58,7 +101,12 @@ func NewMetric(name string, labels []Label) *Metric {
 		Samples: []prompb.Sample{},
 	}
 
-	return &metric
+	err := regexCheckLabels(metric.Labels)
+	if err != nil {
+		return nil, err
+	}
+
+	return &metric, nil
 
 }
 

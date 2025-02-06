@@ -21,10 +21,13 @@ func main() {
 		return
 	}
 
-	metric := promrw.NewMetric(
+	metric, err := promrw.NewMetric(
 		"promrw_example",
 		[]promrw.Label{},
 	)
+	if err != nil {
+		fmt.Printf("error creating metric, error: %v \n", err)
+	}
 
 	err = metric.AddSample(20, time.Now().UnixMilli())
 	if err != nil {
