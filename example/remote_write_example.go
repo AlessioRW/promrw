@@ -1,4 +1,4 @@
-package example
+package promrw
 
 import (
 	"fmt"
@@ -7,8 +7,7 @@ import (
 	promrw "github.com/AlessioRW/promrw/pkg"
 )
 
-func main() {
-
+func promrwExample() {
 	prometheusUrl := ""
 	userAgent := ""
 	globalLabels := []promrw.Label{
