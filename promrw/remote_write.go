@@ -125,6 +125,7 @@ func (metric *Metric) AddSample(value float64, timestamp int64) error {
 }
 
 func (client *RemoteWriteClient) PushMetric(metric *Metric) error {
+	// TODO clean up this function
 
 	allLabels := []prompb.Label{}
 	// add client specific labels
