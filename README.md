@@ -1,4 +1,4 @@
-# promrw - A Golang Prometheus Remote Write
+# promrw - A Golang Prometheus Remote Write Package
 
 ## Overview
 `promrw` is a Go package that provides a client to send metrics to a Prometheus Remote Write endpoint.
