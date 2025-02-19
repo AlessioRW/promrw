@@ -127,14 +127,6 @@ func (client *RemoteWriteClient) PushMetric(metricName string, samples []Sample,
 		Samples: prompbSamples,
 	}
 
-	for _, value := range prompbMetric.Samples {
-		fmt.Println(value)
-	}
-
-	for _, label := range prompbMetric.Labels {
-		fmt.Println(label)
-	}
-
 	writeReq := prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{prompbMetric},
 	}
