@@ -20,19 +20,18 @@ var (
 type RemoteWriteClient struct {
 	userAgent     string
 	prometheusURL string
-	metrics       []*prompb.TimeSeries
 	labels        []prompb.Label
 	httpClient    *http.Client
-}
-
-type Metric struct {
-	Labels  []prompb.Label
-	Samples []prompb.Sample
 }
 
 type Label struct {
 	Name  string
 	Value string
+}
+
+type Sample struct {
+	Timestamp int64
+	Value     float64
 }
 
 // Create a new Remote Write Client.
@@ -53,7 +52,6 @@ func NewClient(remoteWriteURL string, userAgent string, labels []Label) (*Remote
 	client := RemoteWriteClient{
 		prometheusURL: remoteWriteURL,
 		userAgent:     userAgent,
-		metrics:       []*prompb.TimeSeries{},
 		labels:        pLabels,
 		httpClient:    &http.Client{Timeout: 10 * time.Second},
 	}
@@ -86,62 +84,55 @@ func regexCheckLabels(labels []prompb.Label) error {
 	return nil
 }
 
-// Create a new metric to be pushed to Prometheus.
-// name Parameter is the value of the "__name__" label of the metric.
+// Push a metric to Prometheus.
+// metricName Parameter is the value of the "__name__" label of the metric.
 // Label names and "name" parameter, must match this pattern: ^[a-zA-Z_:][a-zA-Z0-9_:]*$.
-func NewMetric(name string, labels []Label) (*Metric, error) {
+func (client *RemoteWriteClient) PushMetric(metricName string, samples []Sample, labels []Label) error {
 
-	pLabels := []prompb.Label{}
-	for _, label := range labels {
-		pLabels = append(pLabels, prompb.Label{Name: label.Name, Value: label.Value})
+	prompbLabels := []prompb.Label{
+		{Name: "__name__", Value: metricName},
 	}
-
-	metric := Metric{
-		Labels:  append(pLabels, prompb.Label{Name: "__name__", Value: name}),
-		Samples: []prompb.Sample{},
-	}
-
-	err := regexCheckLabels(metric.Labels)
-	if err != nil {
-		return nil, err
-	}
-
-	return &metric, nil
-
-}
-
-// Add a Timeseries point to a Metric, these will be cleared every run of PushMetric.
-// Timestamp is a Millisecond value from the Unix Epoch.
-func (metric *Metric) AddSample(value float64, timestamp int64) error {
-
-	newSample := prompb.Sample{
-		Value:     value,
-		Timestamp: timestamp,
-	}
-
-	metric.Samples = append(metric.Samples, newSample)
-
-	return nil
-}
-
-func (client *RemoteWriteClient) PushMetric(metric *Metric) error {
-	// TODO clean up this function
-
-	allLabels := []prompb.Label{}
 	// add client specific labels
 	for _, label := range client.labels {
-		allLabels = append(allLabels, prompb.Label{
+		prompbLabels = append(prompbLabels, prompb.Label{
 			Name:  label.Name,
 			Value: label.Value,
 		})
 	}
 
 	// add metric labels
-	allLabels = append(allLabels, metric.Labels...)
+	for _, label := range labels {
+		prompbLabels = append(prompbLabels, prompb.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+
+	// add samples
+	prompbSamples := []prompb.Sample{}
+	for _, sample := range samples {
+		prompbSamples = append(prompbSamples, prompb.Sample{
+			Timestamp: sample.Timestamp,
+			Value:     sample.Value,
+		})
+	}
+
+	err := regexCheckLabels(prompbLabels)
+	if err != nil {
+		return err
+	}
 
 	prompbMetric := prompb.TimeSeries{
-		Labels:  allLabels,
-		Samples: metric.Samples,
+		Labels:  prompbLabels,
+		Samples: prompbSamples,
+	}
+
+	for _, value := range prompbMetric.Samples {
+		fmt.Println(value)
+	}
+
+	for _, label := range prompbMetric.Labels {
+		fmt.Println(label)
 	}
 
 	writeReq := prompb.WriteRequest{
@@ -185,12 +176,5 @@ func (client *RemoteWriteClient) PushMetric(metric *Metric) error {
 		return fmt.Errorf("remote write request failed with status code: %d, error: %v, error returned from prometheus: %v", res.StatusCode, err, string(stringErr))
 	}
 
-	clearMetricSamples(metric)
-
 	return nil
-}
-
-// clear samples so we don't send repeating data
-func clearMetricSamples(metric *Metric) {
-	metric.Samples = []prompb.Sample{}
 }

@@ -11,7 +11,7 @@ func promrwExample() {
 	prometheusUrl := ""
 	userAgent := ""
 	globalLabels := []promrw.Label{
-		{Name: "label", Value: "label_example_value"},
+		{Name: "label", Value: "label_example_value"}, // these labels will be applied to every metric pushed via this client
 	}
 
 	promClient, err := promrw.NewClient(
@@ -25,19 +25,13 @@ func promrwExample() {
 		return
 	}
 
-	metric, err := promrw.NewMetric(
-		"promrw_example",
+	err = promClient.PushMetric(
+		"example_metric_name",
+		[]promrw.Sample{
+			{Value: 17, Timestamp: time.Now().UnixMilli()},
+		},
 		[]promrw.Label{},
 	)
-	if err != nil {
-		fmt.Printf("error creating metric, error: %v \n", err)
-	}
-
-	err = metric.AddSample(20, time.Now().UnixMilli())
-	if err != nil {
-		fmt.Println(err)
-	}
-	err = promClient.PushMetric(metric)
 	if err != nil {
 		fmt.Println(err)
 	}
