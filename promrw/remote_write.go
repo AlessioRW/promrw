@@ -159,13 +159,17 @@ func (client *RemoteWriteClient) PushMetric(metricName string, samples []Sample,
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode/100 != 2 || err != nil {
-		stringErr, convErr := io.ReadAll(res.Body)
+	stringBody, convErr := io.ReadAll(res.Body)
+
+	if res.StatusCode != 200 || err != nil {
 		if convErr != nil {
 			return fmt.Errorf("remote write request failed with status code: %d, error: %v,", res.StatusCode, err)
 		}
+		return fmt.Errorf("remote write request failed with status code: %d, error: %v, error returned from prometheus: %v", res.StatusCode, err, string(stringBody))
+	}
 
-		return fmt.Errorf("remote write request failed with status code: %d, error: %v, error returned from prometheus: %v", res.StatusCode, err, string(stringErr))
+	if convErr != nil {
+		return fmt.Errorf("error reading response body from promethues, error: %v,", convErr)
 	}
 
 	return nil
