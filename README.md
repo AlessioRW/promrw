@@ -25,7 +25,7 @@ func promrwExample() {
 	prometheusUrl := ""
 	userAgent := ""
 	globalLabels := []promrw.Label{
-		{Name: "label", Value: "label_example_value"}, // these labels will be applied to every metric pushed via this client
+		{Name: "label", Value: "label_example_value"},
 	}
 
 	promClient, err := promrw.NewClient(
